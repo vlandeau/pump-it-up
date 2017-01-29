@@ -18,8 +18,8 @@ class TestTranformers(unittest.TestCase):
                                      'city_count': [6] * 6 + [4] * 4})
 
         # When
-        df_res = ClassifierProjectionFeature(target_series=target, projection_threshold=0.5) \
-            .fit_transform(df)
+        df_res = ClassifierProjectionFeature(projection_threshold=0.5) \
+            .fit_transform(df, target)
 
         # Then
         self.assertTrue(df_res.sort_index(axis=1)

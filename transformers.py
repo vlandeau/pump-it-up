@@ -142,7 +142,7 @@ class PandasDfToNpArrayConverter(TransformerMixin, BaseEstimator):
 
 
 class ClassifierProjectionFeature(TransformerMixin, BaseEstimator):
-    def __init__(self, target_series=None, projection_threshold=0.01):
+    def __init__(self, projection_threshold=0.01):
         self.projection_threshold = projection_threshold
         self.target = None
         self.projection_dfs = None
