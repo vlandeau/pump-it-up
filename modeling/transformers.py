@@ -3,24 +3,26 @@ from sklearn.base import TransformerMixin, BaseEstimator
 import pandas as pd
 import numpy as np
 from sklearn.ensemble.iforest import IsolationForest
-import logging
+from scipy import stats
 
-from sklearn.preprocessing.data import OneHotEncoder
-from sklearn.preprocessing.label import LabelEncoder
+VERBOSE = False
 
 
 def _log_time(func):
     def func_with_logs(*args, **kwargs):
-        func_name = func.__name__
-        class_name = args[0].__class__.__name__
-        start_time = time.time()
-        print "Starting method %s of class %s"\
-              % (func_name, class_name)
+        if VERBOSE:
+            func_name = func.__name__
+            class_name = args[0].__class__.__name__
+            start_time = time.time()
+            print "Starting method %s of class %s" \
+                  % (func_name, class_name)
         res = func(*args, **kwargs)
-        elapsed_time = time.time() - start_time
-        print "Method %s of class %s took %s seconds to perform"\
-              % (func_name, class_name, elapsed_time)
+        if VERBOSE:
+            elapsed_time = time.time() - start_time
+            print "Method %s of class %s took %s seconds to perform" \
+                  % (func_name, class_name, elapsed_time)
         return res
+
     return func_with_logs
 
 
@@ -84,7 +86,7 @@ class Dummifier(TransformerMixin, BaseEstimator):
     def fit(self, df, y=None):
         self.dummified_columns = []
         if self.columns_to_dummify is None:
-            self.columns_to_dummify = df.select_dtypes(include=[object, "category"])\
+            self.columns_to_dummify = df.select_dtypes(include=[object, "category"]) \
                 .columns
         for col in self.columns_to_dummify:
             self.dummified_columns += map(lambda x: col + '_' + str(x),
@@ -96,7 +98,7 @@ class Dummifier(TransformerMixin, BaseEstimator):
         dummified_columns_res = []
         for col in self.columns_to_dummify:
             dummified_columns_res += map(lambda x: col + '_' + str(x),
-                                          df[col].unique().tolist())
+                                         df[col].unique().tolist())
         df_res = pd.get_dummies(df,
                                 columns=self.columns_to_dummify,
                                 dummy_na=True)
@@ -104,25 +106,28 @@ class Dummifier(TransformerMixin, BaseEstimator):
             if col not in df_res.columns:
                 df_res[col] = 0
         return df_res.drop(axis=1,
-            labels=set(dummified_columns_res) - set(self.dummified_columns))
+                           labels=set(dummified_columns_res) - set(self.dummified_columns))
 
 
 class DateInfoGetter(TransformerMixin, BaseEstimator):
     def __init__(self):
         self.date_cols = []
+        self.dates_min = {}
 
     def fit(self, df, y=None):
         self.date_cols = df.select_dtypes(include=[np.dtype("datetime64[ns]")]).columns
+        for col in self.date_cols:
+            self.dates_min[col] = df[col].min()
         return self
 
     @_log_time
     def transform(self, df):
         df_copy = df.copy()
         for col in self.date_cols:
-            df_copy[col + "_weekday"] = df_copy[col].apply(lambda x: x.weekday())
-            df_copy[col + "_month"] = df_copy[col].apply(lambda x: x.month)
-            df_copy[col + "_year"] = df_copy[col].apply(lambda x: x.year)
-            df_copy[col + "_since_beginning"] = ((df_copy[col] - df_copy[col].min())
+            df_copy[col + "_weekday"] = df_copy[col].apply(lambda x: str(x.weekday()))
+            df_copy[col + "_month"] = df_copy[col].apply(lambda x: str(x.month))
+            df_copy[col + "_year"] = df_copy[col].apply(lambda x: str(x.year))
+            df_copy[col + "_since_beginning"] = ((df_copy[col] - self.dates_min[col])
                                                  .apply(lambda x: x.days))
             del df_copy[col]
         return df_copy
@@ -151,9 +156,9 @@ class ClassifierProjectionFeature(TransformerMixin, BaseEstimator):
     @_log_time
     def fit(self, df, y=None):
         self.target = y.copy()
-        mask_mode = (self.target == self.target.mode()[0])
-        self.target.loc[mask_mode] = 1
-        self.target.loc[~mask_mode] = 0
+        mask_mode = (self.target == stats.mode(self.target)[0][0])
+        self.target[mask_mode] = 1
+        self.target[~mask_mode] = 0
         self.target = self.target.astype(np.int64)
         self.columns_to_project = self._categorical_features_with_rare_modalities(df)
         projection_target = 'projection_target'
@@ -161,9 +166,9 @@ class ClassifierProjectionFeature(TransformerMixin, BaseEstimator):
         self.projection_dfs = {}
         for col in self.columns_to_project:
             projection_df = pd.DataFrame()
-            projection_df[col + '_target_response'] = df[[projection_target, col]]\
+            projection_df[col + '_target_response'] = df[[projection_target, col]] \
                 .groupby(col).mean()['projection_target']
-            projection_df[col + '_count'] = df[[projection_target, col]]\
+            projection_df[col + '_count'] = df[[projection_target, col]] \
                 .groupby(col).count()['projection_target']
             self.projection_dfs[col] = projection_df.reset_index(level=0)
         df.drop(projection_target, axis=1, inplace=True)
@@ -229,7 +234,7 @@ class ProjectionFeatureAdder(TransformerMixin, BaseEstimator):
         return categorical_features_with_rare_modalities
 
 
-class ReplaceValuesByNan(TransformerMixin, BaseEstimator):
+class ReplaceNegativeByNan(TransformerMixin, BaseEstimator):
     def __init__(self, columns_to_transform=[], filter_function=(lambda x: x <= 0)):
         self.columns_to_transform = columns_to_transform
         self.filter_function = filter_function
@@ -316,6 +321,8 @@ class OutlierRemoval(TransformerMixin, BaseEstimator):
         self.isolation_forest = IsolationForest(n_estimators=n_estimators,
                                                 n_jobs=n_jobs)
         self.anomaly_threshold = anomaly_threshold
+        self.target = None
+        self.outlier_mask = None
 
     @_log_time
     def fit(self, df, y=None):
