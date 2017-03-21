@@ -71,7 +71,7 @@ class ParameterTuner:
         self.stacked_model = StackedClassifier(base_classifier,
                                                classifiers,
                                                verbose=1)
-        self.stacked_model.fit(self.df_train, self.y_train)
+        self.stacked_model.fit(self.x_train, self.y_train)
         return self.stacked_model
 
     def _get_best_params(self, estimator_to_optimize, space, cv, max_evals):
@@ -88,7 +88,7 @@ class ParameterTuner:
     def _get_objective_function(self, estimator_to_optimize, cv):
         def objective(current_space):
             estimator = estimator_to_optimize.set_params(**current_space)
-            scores = cross_val_score(estimator, self.df_train, self.y_train, cv=cv)
+            scores = cross_val_score(estimator, self.x_train, self.y_train, cv=cv)
             print "Iteration %s: score %s with std %s for params %s" % (objective.current_iteration,
                                                                         scores.mean(),
                                                                         scores.std(),
